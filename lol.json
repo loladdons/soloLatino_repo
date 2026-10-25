@@ -1,0 +1,32 @@
+{
+  "id": "sololatino",
+  "name": "SoloLatino",
+  "version": "0.2.0",
+  "apiVersion": 9,
+  "entry": "plugin.js",
+  "icon": "icon.png",
+  "author": "xuper-plugin",
+  "description": "Películas, series, anime y doramas en español latino de sololatino.net: géneros, plataformas, búsqueda y varios servidores por título.",
+  "color": "#06B6D4",
+  "theme": {
+    "accent": "#06B6D4",
+    "onAccent": "#001418",
+    "background": "#070E18",
+    "surface": "#0F1B2B",
+    "highlight": "#67E8F9"
+  },
+  "section": { "label": "SoloLatino" },
+  "categories": ["movies", "series"],
+  "capabilities": ["home", "discover", "search", "meta", "streams"],
+  "languages": ["Latino", "Castellano", "Subtitulado"],
+  "episodesPagination": { "enabled": true, "perPage": 50 },
+  "config": [
+    {
+      "key": "idioma",
+      "label": "Idioma preferido",
+      "type": "select",
+      "default": "Latino",
+      "options": ["Latino", "Castellano", "Subtitulado"]
+    }
+  ]
+}
