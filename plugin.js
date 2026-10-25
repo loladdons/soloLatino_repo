@@ -249,7 +249,7 @@ async function safeRow(id, ref) {
     return null;
   }
 }
-// Tarjetas de plataformas (catálogos): siempre se generan, aunque fallen las peticiones de póster.
+// Tarjetas de plataformas (catálogos) — siempre se generan
 let netTilesPromise = null;
 function netTiles() {
   if (!netTilesPromise) {
@@ -266,21 +266,16 @@ function netTiles() {
             return t;
           },
           function () {
-            // Si falla la petición, igual devolvemos el catálogo (sin póster)
             return { id: "net:" + n[0], title: n[1], type: "catalog" };
           }
         );
       })
     ).then(
       function (tiles) {
-        // Si ninguna trae póster, no cacheamos para reintentar la próxima vez
-        if (!tiles.some(function (t) { return t.poster; })) {
-          netTilesPromise = null;
-        }
+        if (!tiles.some(function (t) { return t.poster; })) netTilesPromise = null;
         return tiles;
       },
       function () {
-        // Último recurso: tiles estáticos
         netTilesPromise = null;
         return NETWORKS.map(function (n) {
           return { id: "net:" + n[0], title: n[1], type: "catalog" };
@@ -299,37 +294,23 @@ async function getHome() {
     safeRow("populares", "list:populares"),
     netTiles().catch(function (e) {
       log("plataformas:", e && e.message);
-      // Fallback estático si todo falla
       return NETWORKS.map(function (n) {
         return { id: "net:" + n[0], title: n[1], type: "catalog" };
       });
     }),
   ]);
-
   let tiles = settled[5] || [];
-  // Garantía final: nunca dejamos la fila vacía
   if (!tiles.length) {
     tiles = NETWORKS.map(function (n) {
       return { id: "net:" + n[0], title: n[1], type: "catalog" };
     });
   }
-
   const rows = settled.slice(0, 5).filter(Boolean);
   if (!rows.length) throw mkErr("unavailable", "home: sin filas");
-
-  // Hero
   const src = rows.find(function (r) { return r.id === "populares"; }) || rows[0];
-  const out = [{
-    id: "hero",
-    title: "Destacados",
-    type: "hero",
-    imageStyle: "backdrop",
-    items: src.items.slice(0, 6)
-  }];
-
+  const out = [{ id: "hero", title: "Destacados", type: "hero", imageStyle: "backdrop", items: src.items.slice(0, 6) }];
   out.push.apply(out, rows);
-
-  // Siempre insertamos la fila de Plataformas (tipo catalog)
+  // Siempre insertar la fila de Plataformas como catálogos
   out.splice(3, 0, {
     id: "plataformas",
     title: "Plataformas",
@@ -337,7 +318,6 @@ async function getHome() {
     imageStyle: "poster",
     items: tiles
   });
-
   return out;
 }
 // Novedades del launcher: mezcla intercalada de series y películas recientes.
@@ -392,7 +372,6 @@ async function getDiscoverFilters() {
 }
 async function getDiscover(opts) {
   opts = opts || {};
-  // Las plataformas ya no son un filtro: son catálogos (pantalla Catálogos y fila del home).
   const genero = String(opts.genero || "todos");
   let ref;
   if (genero !== "todos") ref = "genre:" + genero;
@@ -585,7 +564,7 @@ for (let i = 0; i < 256; i++) {
   M14[i] = gmul(i, 14);
 }
 function expandKey(key) {
-  const nk = key.length / 4; // 4 u 8
+  const nk = key.length / 4;
   const rounds = nk + 6;
   const total = 16 * (rounds + 1);
   const w = new Uint8Array(total);
@@ -632,11 +611,10 @@ function decryptBlock(ks, input, out) {
   out.set(s);
 }
 function hexBytes(hex) {
-  const u = new Uint8Array(hex
+  const u = new Uint8Array(hex.length / 2);
   for (let i = 0; i < u.length; i++) u[i] = parseInt(hex.substr(i * 2, 2), 16);
   return u;
 }
-// key: bytes (16/32); iv: 16 bytes; data: bytes múltiplo de 16 -> texto (latin1)
 function aesCbcDecrypt(key, iv, data) {
   if (data.length === 0 || data.length % 16 !== 0) throw new Error("bad AES data length");
   const ks = expandKey(key);
@@ -658,8 +636,6 @@ function aesCbcDecrypt(key, iv, data) {
 // embed69: proof-of-work + enlaces cifrados
 const MAX_DIFFICULTY = 4;
 const POW_CAP = 100000;
-// Ruta rápida: el mensaje (desafío + número) cabe en un bloque de 64 bytes; se reutiliza el
-// buffer y solo se calcula lo necesario para comparar los ceros iniciales (difficulty ≤ 8).
 function solvePow(challenge, difficulty) {
   const prefix = utf8Bytes(challenge);
   const maxDigits = String(POW_CAP).length;
@@ -739,7 +715,7 @@ function serversOf(html) {
   return rows;
 }
 // ---------------------------------------------------------------------------------------------
-// Cookies (sanctum): la app no guarda cookies; se leen del set-cookie y se reenvían a mano.
+// Cookies (sanctum)
 function parseSetCookie(header) {
   const jar = {};
   if (!header) return jar;
@@ -781,7 +757,6 @@ async function playerUrl(token, pageUrl) {
 }
 // ---------------------------------------------------------------------------------------------
 // Extractores
-// ---- desempaquetador p.a.c.k.e.d
 const ALPHA = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 function toNum(s, radix) {
   let n = 0;
@@ -951,7 +926,6 @@ async function playable(out) {
     return false;
   }
 }
-// Resuelve todos en paralelo; devuelve con el primero bueno + un margen corto.
 function resolveAll(jobs) {
   return new Promise(function (resolve) {
     const results = [];
