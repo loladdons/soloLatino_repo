@@ -266,27 +266,92 @@ async function safeRow(id, ref) {
   }
 }
 
+// Tarjetas de plataformas (catálogos): cada una con el póster del primer título de su lista.
+let netTilesPromise = null;
+function netTiles() {
+  if (!netTilesPromise) {
+    netTilesPromise = Promise.all(
+      NETWORKS.map(function (n) {
+        return listPage({ path: "/red/" + n[0] }, 1).then(
+          function (r) {
+            const first = r.cards.find(function (c) { return c.poster; });
+            const t = { id: "net:" + n[0], title: n[1], type: "catalog" };
+            if (first) {
+              t.poster = first.poster;
+              t.backdrop = first.poster;
+            }
+            return t;
+          },
+          function () { return { id: "net:" + n[0], title: n[1], type: "catalog" }; }
+        );
+      })
+    ).then(
+      function (tiles) {
+        // Si todas fallaron, no memorizar el resultado.
+        if (!tiles.some(function (t) { return t.poster; })) netTilesPromise = null;
+        return tiles;
+      },
+      function (e) {
+        netTilesPromise = null;
+        throw e;
+      }
+    );
+  }
+  return netTilesPromise;
+}
+
 async function getHome() {
-  const rows = (await Promise.all([
+  const settled = await Promise.all([
     safeRow("peliculas", "list:peliculas"),
     safeRow("series", "list:series"),
     safeRow("animes", "list:animes"),
     safeRow("doramas", "list:doramas"),
     safeRow("populares", "list:populares"),
-    safeRow("netflix", "net:netflix"),
-  ])).filter(Boolean);
+    netTiles().catch(function (e) { log("plataformas:", e && e.message); return []; }),
+  ]);
+  const tiles = settled[5];
+  const rows = settled.slice(0, 5).filter(Boolean);
   if (!rows.length) throw mkErr("unavailable", "home: sin filas");
   // Hero: lo más popular (o lo primero que haya).
   const src = rows.find(function (r) { return r.id === "populares"; }) || rows[0];
-  rows.unshift({ id: "hero", title: "Destacados", type: "hero", imageStyle: "backdrop", items: src.items.slice(0, 6) });
-  return rows;
+  const out = [{ id: "hero", title: "Destacados", type: "hero", imageStyle: "backdrop", items: src.items.slice(0, 6) }];
+  out.push.apply(out, rows);
+  // Las plataformas son catálogos: al tocar una tarjeta se abre su lista completa.
+  if (tiles.length) out.splice(3, 0, { id: "plataformas", title: "Plataformas", type: "catalog", imageStyle: "poster", items: tiles });
+  return out;
+}
+
+// Novedades del launcher: mezcla intercalada de series y películas recientes.
+async function getNews() {
+  const settled = await Promise.all([
+    listPage(LISTS.peliculas, 1).catch(function () { return { cards: [] }; }),
+    listPage(LISTS.series, 1).catch(function () { return { cards: [] }; }),
+  ]);
+  const movies = settled[0].cards.filter(function (c) { return c.poster; });
+  const series = settled[1].cards.filter(function (c) { return c.poster; });
+  const mixed = [];
+  for (let i = 0; i < 8 && (i < movies.length || i < series.length); i++) {
+    if (i < series.length) mixed.push(series[i]);
+    if (i < movies.length) mixed.push(movies[i]);
+  }
+  return mixed.slice(0, 12).map(function (c) {
+    const isMovie = c.kind === "movie";
+    return {
+      id: (isMovie ? "pelicula/" : "serie/") + c.slug,
+      title: c.title,
+      poster: c.poster,
+      backdrop: c.poster,
+      message: (isMovie ? "Película" : "Serie") + (c.year ? " · " + c.year : ""),
+    };
+  });
 }
 
 async function getCatalogs() {
+  const tiles = await netTiles().catch(function () { return []; });
   return [].concat(
+    tiles.map(function (t) { return { id: t.id, title: t.title, poster: t.poster, backdrop: t.backdrop }; }),
     Object.keys(LISTS).map(function (k) { return { id: "list:" + k, title: LISTS[k].title }; }),
-    GENRES.map(function (g) { return { id: "genre:" + g[0], title: g[1] }; }),
-    NETWORKS.map(function (n) { return { id: "net:" + n[0], title: n[1] }; })
+    GENRES.map(function (g) { return { id: "genre:" + g[0], title: g[1] }; })
   );
 }
 
@@ -983,6 +1048,7 @@ async function getStreams(id, type, season, episode) {
 
 module.exports = {
   getHome: getHome,
+  getNews: getNews,
   getCatalogs: getCatalogs,
   getCatalog: getCatalog,
   getDiscoverFilters: getDiscoverFilters,
