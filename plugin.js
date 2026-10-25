@@ -1,10 +1,9 @@
-// SoloLatino (sololatino.net) — port para la app (contrato lol.json / CommonJS) — v0.2.0
+// SoloLatino (sololatino.net) — port para la app (contrato lol.json / CommonJS) — v0.2.1
 //
 // Ids: "pelicula/<slug>" y "serie/<slug>"; un episodio es "serie/<slug>#<temporada>x<episodio>".
 // La app no ofrece kino.crypto / kino.cookies / kino.storage / kino.browser, así que aquí van
 // SHA-256 y AES-256-CBC en JS puro, las cookies se leen de la cabecera set-cookie y la caché es
 // en memoria. Servidores sin extractor (Filemoon, MixDrop…) se omiten: necesitarían el navegador.
-
 const SITE = "https://sololatino.net";
 const EMBED_SITE = "https://embed69.org";
 const UA =
@@ -14,7 +13,6 @@ const CACHE_MS = 10 * 60 * 1000;
 const MAX_COPIES = 8;
 const RESOLVE_BUDGET_MS = 35000;
 const GRACE_MS = 4000;
-
 const GENRES = [
   ["accion", "Acción"], ["animacion", "Animación"], ["aventura", "Aventura"], ["belica", "Bélica"],
   ["ciencia-ficcion", "Ciencia Ficción"], ["comedia", "Comedia"], ["crimen", "Crimen"],
@@ -34,10 +32,8 @@ const LISTS = {
   animes: { path: "/animes", title: "Anime" },
   doramas: { path: "/doramas", title: "Doramas" },
 };
-
 // ---------------------------------------------------------------------------------------------
 // Utilidades
-
 function mkErr(code, msg) {
   const e = new Error(msg);
   e.code = code;
@@ -89,7 +85,6 @@ function absolute(href, base) {
   }
   return origin + out.join("/");
 }
-
 const memo = {};
 async function cached(key, fn) {
   const hit = memo[key];
@@ -98,7 +93,6 @@ async function cached(key, fn) {
   if (!(Array.isArray(v) && !v.length)) memo[key] = { t: Date.now(), v: v };
   return v;
 }
-
 async function getPage(url, headers) {
   const r = await kfetch(url, {
     headers: Object.assign({ "User-Agent": UA, "Accept-Language": "es-MX,es;q=0.9" }, headers || {}),
@@ -107,10 +101,8 @@ async function getPage(url, headers) {
   if (!r.ok) throw mkErr("unavailable", "SoloLatino " + r.status + " " + url);
   return r.text();
 }
-
 // ---------------------------------------------------------------------------------------------
 // Parseo de HTML
-
 const decode = function (s) {
   return String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#0?39;|&#x27;/g, "'")
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ");
@@ -118,7 +110,6 @@ const decode = function (s) {
 const text = function (s) {
   return decode(String(s || "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 };
-
 function parseCards(html) {
   const out = [];
   const seen = new Set();
@@ -144,7 +135,6 @@ function parseCards(html) {
   }
   return out;
 }
-
 function parseTitle(html) {
   const h = String(html || "");
   const t2 = /<h1[^>]*>([\s\S]*?)<\/h1>/.exec(h);
@@ -192,7 +182,6 @@ function parseTitle(html) {
     seasons: seasons,
   };
 }
-
 function parsePlayers(html) {
   const out = [];
   for (const g of String(html || "").split('data-lang-group="').slice(1)) {
@@ -207,10 +196,8 @@ function embedId(url) {
   const m = /\/f\/(tt\d+(?:-\d+x\d+)?)/.exec(String(url || ""));
   return m ? m[1] : null;
 }
-
 // ---------------------------------------------------------------------------------------------
 // Items, listas, home
-
 function toItem(card, genreName) {
   const item = {
     id: (card.kind === "movie" ? "pelicula/" : "serie/") + card.slug,
@@ -228,7 +215,6 @@ function toItem(card, genreName) {
   if (g.length) item.genres = g;
   return item;
 }
-
 // ref: "list:<k>" | "genre:<slug>" | "net:<slug>"
 function defOf(ref) {
   const m = /^(list|genre|net):([a-z0-9-]+)$/.exec(String(ref || ""));
@@ -241,14 +227,12 @@ function defOf(ref) {
   const n = NETWORKS.find(function (x) { return x[0] === m[2]; });
   return n ? { path: "/red/" + n[0], title: n[1] } : null;
 }
-
 async function listPage(def, page) {
   const qs = [def.query, page > 1 ? "page=" + page : ""].filter(Boolean).join("&");
   const url = SITE + def.path + (qs ? "?" + qs : "");
   const cards = await cached("l:" + def.path + ":" + qs, async function () { return parseCards(await getPage(url)); });
   return { cards: cards, more: cards.length >= 24 };
 }
-
 async function rowOf(id, ref, style) {
   const def = defOf(ref);
   const r = await listPage(def, 1);
@@ -265,8 +249,7 @@ async function safeRow(id, ref) {
     return null;
   }
 }
-
-// Tarjetas de plataformas (catálogos): cada una con el póster del primer título de su lista.
+// Tarjetas de plataformas (catálogos): siempre se generan, aunque fallen las peticiones de póster.
 let netTilesPromise = null;
 function netTiles() {
   if (!netTilesPromise) {
@@ -282,24 +265,31 @@ function netTiles() {
             }
             return t;
           },
-          function () { return { id: "net:" + n[0], title: n[1], type: "catalog" }; }
+          function () {
+            // Si falla la petición, igual devolvemos el catálogo (sin póster)
+            return { id: "net:" + n[0], title: n[1], type: "catalog" };
+          }
         );
       })
     ).then(
       function (tiles) {
-        // Si todas fallaron, no memorizar el resultado.
-        if (!tiles.some(function (t) { return t.poster; })) netTilesPromise = null;
+        // Si ninguna trae póster, no cacheamos para reintentar la próxima vez
+        if (!tiles.some(function (t) { return t.poster; })) {
+          netTilesPromise = null;
+        }
         return tiles;
       },
-      function (e) {
+      function () {
+        // Último recurso: tiles estáticos
         netTilesPromise = null;
-        throw e;
+        return NETWORKS.map(function (n) {
+          return { id: "net:" + n[0], title: n[1], type: "catalog" };
+        });
       }
     );
   }
   return netTilesPromise;
 }
-
 async function getHome() {
   const settled = await Promise.all([
     safeRow("peliculas", "list:peliculas"),
@@ -307,20 +297,49 @@ async function getHome() {
     safeRow("animes", "list:animes"),
     safeRow("doramas", "list:doramas"),
     safeRow("populares", "list:populares"),
-    netTiles().catch(function (e) { log("plataformas:", e && e.message); return []; }),
+    netTiles().catch(function (e) {
+      log("plataformas:", e && e.message);
+      // Fallback estático si todo falla
+      return NETWORKS.map(function (n) {
+        return { id: "net:" + n[0], title: n[1], type: "catalog" };
+      });
+    }),
   ]);
-  const tiles = settled[5];
+
+  let tiles = settled[5] || [];
+  // Garantía final: nunca dejamos la fila vacía
+  if (!tiles.length) {
+    tiles = NETWORKS.map(function (n) {
+      return { id: "net:" + n[0], title: n[1], type: "catalog" };
+    });
+  }
+
   const rows = settled.slice(0, 5).filter(Boolean);
   if (!rows.length) throw mkErr("unavailable", "home: sin filas");
-  // Hero: lo más popular (o lo primero que haya).
+
+  // Hero
   const src = rows.find(function (r) { return r.id === "populares"; }) || rows[0];
-  const out = [{ id: "hero", title: "Destacados", type: "hero", imageStyle: "backdrop", items: src.items.slice(0, 6) }];
+  const out = [{
+    id: "hero",
+    title: "Destacados",
+    type: "hero",
+    imageStyle: "backdrop",
+    items: src.items.slice(0, 6)
+  }];
+
   out.push.apply(out, rows);
-  // Las plataformas son catálogos: al tocar una tarjeta se abre su lista completa.
-  if (tiles.length) out.splice(3, 0, { id: "plataformas", title: "Plataformas", type: "catalog", imageStyle: "poster", items: tiles });
+
+  // Siempre insertamos la fila de Plataformas (tipo catalog)
+  out.splice(3, 0, {
+    id: "plataformas",
+    title: "Plataformas",
+    type: "catalog",
+    imageStyle: "poster",
+    items: tiles
+  });
+
   return out;
 }
-
 // Novedades del launcher: mezcla intercalada de series y películas recientes.
 async function getNews() {
   const settled = await Promise.all([
@@ -345,7 +364,6 @@ async function getNews() {
     };
   });
 }
-
 async function getCatalogs() {
   const tiles = await netTiles().catch(function () { return []; });
   return [].concat(
@@ -354,7 +372,6 @@ async function getCatalogs() {
     GENRES.map(function (g) { return { id: "genre:" + g[0], title: g[1] }; })
   );
 }
-
 async function getCatalog(catalogId, opts) {
   const def = defOf(catalogId);
   if (!def) return { items: [], hasMore: false };
@@ -366,7 +383,6 @@ async function getCatalog(catalogId, opts) {
     page: page,
   };
 }
-
 async function getDiscoverFilters() {
   const listOpts = Object.keys(LISTS).map(function (k) { return { id: k, label: LISTS[k].title }; });
   return [
@@ -374,7 +390,6 @@ async function getDiscoverFilters() {
     { id: "genero", label: "Género", options: [{ id: "todos", label: "Todos" }].concat(GENRES.map(function (g) { return { id: g[0], label: g[1] }; })) },
   ];
 }
-
 async function getDiscover(opts) {
   opts = opts || {};
   // Las plataformas ya no son un filtro: son catálogos (pantalla Catálogos y fila del home).
@@ -384,7 +399,6 @@ async function getDiscover(opts) {
   else ref = "list:" + String(opts.lista || "peliculas");
   return getCatalog(ref, { page: opts.page });
 }
-
 async function search(query) {
   const q = String(query || "").trim();
   if (q.length < 2) return [];
@@ -412,10 +426,8 @@ async function search(query) {
   }
   return items.slice(0, 40);
 }
-
 // ---------------------------------------------------------------------------------------------
 // Detalle y episodios
-
 function splitId(id) {
   const s = String(id);
   const hash = s.indexOf("#");
@@ -430,13 +442,11 @@ function splitId(id) {
     episode: fm ? Number(fm[2]) : null,
   };
 }
-
 function titlePage(kind, slug) {
   return cached("p:" + kind + slug, async function () {
     return parseTitle(await getPage(SITE + "/" + (kind === "pelicula" ? "pelicula" : "serie") + "/" + slug));
   });
 }
-
 async function getMeta(id) {
   const p = splitId(id);
   if ((p.kind !== "pelicula" && p.kind !== "serie") || !p.slug) throw mkErr("not_found", "id inválido " + id);
@@ -473,10 +483,8 @@ async function getMeta(id) {
   }
   return meta;
 }
-
 // ---------------------------------------------------------------------------------------------
 // SHA-256 (JS puro) — para el proof-of-work de embed69
-
 const SHA_K = new Int32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
   0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -488,7 +496,6 @@ const SHA_K = new Int32Array([
   0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ]);
 const SHA_W = new Int32Array(64);
-
 function sha256Bytes(bytes) {
   const len = bytes.length;
   const total = (((len + 9 + 63) >> 6) << 6);
@@ -552,10 +559,8 @@ function toHex(u) {
 function sha256Hex(str) {
   return toHex(sha256Bytes(utf8Bytes(str)));
 }
-
 // ---------------------------------------------------------------------------------------------
 // AES-CBC (JS puro, 128 o 256 bits) — solo descifrar
-
 const SBOX_HEX = "637c777bf26b6fc53001672bfed7ab76ca82c97dfa5947f0add4a2af9ca472c0b7fd9326363ff7cc34a5e5f171d8311504c723c31896059a071280e2eb27b27509832c1a1b6e5aa0523bd6b329e32f8453d100ed20fcb15b6acbbe394a4c58cfd0efaafb434d338545f9027f503c9fa851a3408f929d38f5bcb6da2110fff3d2cd0c13ec5f974417c4a77e3d645d197360814fdc222a908846eeb814de5e0bdbe0323a0a4906245cc2d3ac629195e479e7c8376d8dd54ea96c56f4ea657aae08ba78252e1ca6b4c6e8dd741f4bbd8b8a703eb5664803f60e613557b986c11d9ee1f8981169d98e949b1e87e9ce5528df8ca1890dbfe6426841992d0fb054bb16";
 const SBOX = new Uint8Array(256);
 const INV_SBOX = new Uint8Array(256);
@@ -627,7 +632,7 @@ function decryptBlock(ks, input, out) {
   out.set(s);
 }
 function hexBytes(hex) {
-  const u = new Uint8Array(hex.length / 2);
+  const u = new Uint8Array(hex
   for (let i = 0; i < u.length; i++) u[i] = parseInt(hex.substr(i * 2, 2), 16);
   return u;
 }
@@ -649,13 +654,10 @@ function aesCbcDecrypt(key, iv, data) {
   for (let i = 0; i < end; i++) s += String.fromCharCode(out[i]);
   return s;
 }
-
 // ---------------------------------------------------------------------------------------------
 // embed69: proof-of-work + enlaces cifrados
-
 const MAX_DIFFICULTY = 4;
 const POW_CAP = 100000;
-
 // Ruta rápida: el mensaje (desafío + número) cabe en un bloque de 64 bytes; se reutiliza el
 // buffer y solo se calcula lo necesario para comparar los ceros iniciales (difficulty ≤ 8).
 function solvePow(challenge, difficulty) {
@@ -736,10 +738,8 @@ function serversOf(html) {
   }
   return rows;
 }
-
 // ---------------------------------------------------------------------------------------------
 // Cookies (sanctum): la app no guarda cookies; se leen del set-cookie y se reenvían a mano.
-
 function parseSetCookie(header) {
   const jar = {};
   if (!header) return jar;
@@ -753,7 +753,6 @@ function parseSetCookie(header) {
 function cookieHeader(jar) {
   return Object.keys(jar).map(function (k) { return k + "=" + jar[k]; }).join("; ");
 }
-
 async function playerUrl(token, pageUrl) {
   const r0 = await kfetch(SITE + "/sanctum/csrf-cookie", {
     headers: { "User-Agent": UA, Accept: "application/json", Referer: pageUrl },
@@ -780,10 +779,8 @@ async function playerUrl(token, pageUrl) {
   const j = JSON.parse(await r.text());
   return j && typeof j.url === "string" ? j.url : null;
 }
-
 // ---------------------------------------------------------------------------------------------
 // Extractores
-
 // ---- desempaquetador p.a.c.k.e.d
 const ALPHA = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 function toNum(s, radix) {
@@ -817,7 +814,6 @@ function hlsKey(txt, keys, base) {
 function findIn(html, pick) {
   return pick(html) || pick(unpack(html) || "") || null;
 }
-
 async function pageText(url, headers, name) {
   const r = await kfetch(url, { headers: Object.assign({ "User-Agent": UA }, headers), timeoutMs: 9000 });
   if (!r.ok) {
@@ -826,7 +822,6 @@ async function pageText(url, headers, name) {
   }
   return r.text();
 }
-
 async function exVidhide(embedUrl) {
   const origin = originOf(embedUrl);
   const html = await pageText(embedUrl, { Referer: origin + "/" }, "vidhide");
@@ -835,7 +830,6 @@ async function exVidhide(embedUrl) {
   if (!url) return null;
   return { url: url, hls: true, headers: { Referer: origin + "/", Origin: origin } };
 }
-
 async function exStreamwish(embedUrl) {
   let u = embedUrl;
   if (hostnameOf(u) === "hglink.to") u = u.replace("hglink.to", "vibuxer.com");
@@ -846,7 +840,6 @@ async function exStreamwish(embedUrl) {
   if (!url) return null;
   return { url: url, hls: true, headers: { "User-Agent": UA, Referer: origin + "/" } };
 }
-
 const VOE_JUNK = ["@$", "^^", "~@", "%?", "*~", "!!", "#&"];
 function rot13(s) {
   return s.replace(/[a-zA-Z]/g, function (c) {
@@ -886,7 +879,6 @@ async function exVoe(embedUrl) {
   }
   return null;
 }
-
 const EXTRACTORS = [
   { name: "vidhide", hosts: ["vidhide.com", "vidhidepro.com", "vidhideplus.com", "vidhidefast.com", "dintezuvio.com", "minochinos.com", "filelions.to", "morencius.com", "callistanise.com"], run: exVidhide },
   { name: "streamwish", hosts: ["embedwish.com", "hlswish.com", "streamwish.com", "streamwish.to", "strwish.com", "wishembed.com", "filelions.com", "hglink.to", "vibuxer.com"], run: exStreamwish },
@@ -900,10 +892,8 @@ function extractorFor(embedUrl) {
   }
   return null;
 }
-
 // ---------------------------------------------------------------------------------------------
 // Streams
-
 const SERVER_NAME = { vidhide: "VidHide", streamwish: "StreamWish", voe: "VOE" };
 function langLabel(l) {
   const k = String(l || "").toUpperCase();
@@ -917,7 +907,6 @@ function prefLabel() {
   if (v.indexOf("sub") >= 0) return "Subtitulado";
   return "Latino";
 }
-
 function pageOf(p) {
   if (p.kind === "pelicula") return SITE + "/pelicula/" + p.slug;
   if (p.kind === "serie" && p.season != null && p.episode != null) {
@@ -925,7 +914,6 @@ function pageOf(p) {
   }
   return null;
 }
-
 async function serverRows(pageUrl) {
   const players = parsePlayers(await getPage(pageUrl, { Referer: SITE + "/" }));
   if (!players.length) return [];
@@ -954,7 +942,6 @@ async function serverRows(pageUrl) {
     .sort(function (a, b) { return rank(a) - rank(b) || a.i - b.i; })
     .slice(0, MAX_COPIES);
 }
-
 async function playable(out) {
   if (!out.hls && !HLS_RE.test(out.url)) return true;
   try {
@@ -964,7 +951,6 @@ async function playable(out) {
     return false;
   }
 }
-
 // Resuelve todos en paralelo; devuelve con el primero bueno + un margen corto.
 function resolveAll(jobs) {
   return new Promise(function (resolve) {
@@ -996,7 +982,6 @@ function resolveAll(jobs) {
     });
   });
 }
-
 async function getStreams(id, type, season, episode) {
   const p = splitId(id);
   if (season != null) p.season = Number(season);
@@ -1010,7 +995,6 @@ async function getStreams(id, type, season, episode) {
   }
   const pageUrl = pageOf(p);
   if (!pageUrl) throw mkErr("not_found", "id inválido: " + id);
-
   const rows = await serverRows(pageUrl);
   if (!rows.length) {
     log("sin servidores compatibles en", pageUrl);
@@ -1043,7 +1027,6 @@ async function getStreams(id, type, season, episode) {
   results.sort(function (a, b) { return a._rank - b._rank; });
   return results.map(function (r) { delete r._rank; return r; });
 }
-
 module.exports = {
   getHome: getHome,
   getNews: getNews,
