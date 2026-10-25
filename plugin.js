@@ -372,17 +372,15 @@ async function getDiscoverFilters() {
   return [
     { id: "lista", label: "Lista", options: listOpts },
     { id: "genero", label: "Género", options: [{ id: "todos", label: "Todos" }].concat(GENRES.map(function (g) { return { id: g[0], label: g[1] }; })) },
-    { id: "plataforma", label: "Plataforma", options: [{ id: "todas", label: "Todas" }].concat(NETWORKS.map(function (n) { return { id: n[0], label: n[1] }; })) },
   ];
 }
 
 async function getDiscover(opts) {
   opts = opts || {};
-  const plataforma = String(opts.plataforma || "todas");
+  // Las plataformas ya no son un filtro: son catálogos (pantalla Catálogos y fila del home).
   const genero = String(opts.genero || "todos");
   let ref;
-  if (plataforma !== "todas") ref = "net:" + plataforma;
-  else if (genero !== "todos") ref = "genre:" + genero;
+  if (genero !== "todos") ref = "genre:" + genero;
   else ref = "list:" + String(opts.lista || "peliculas");
   return getCatalog(ref, { page: opts.page });
 }
